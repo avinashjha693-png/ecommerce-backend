@@ -38,7 +38,7 @@ async function checkStock(productId, quantity) {
     const inventoryItem = await db.Inventory.findOne({where: {productId}});
     
     if (!inventoryItem) {
-        
+
         return false;
     }
     
@@ -46,6 +46,7 @@ async function checkStock(productId, quantity) {
 }
 
 app.get('/health',(req,res)=>{
+    console.log('health check');
     res.json({status:'ok'})
 });
 
@@ -286,6 +287,129 @@ app.put('/inventory/:id', authMiddleware, async(req,res)=>{
 });
 
 
+//cart
+
+
+
+
+app.post('/cart/add', authMiddleware, async (req, res) => {
+    try {
+        const { productId, quantity } = req.body;
+
+        const inStock = await checkStock(productId, quantity);
+        if (!inStock) {
+            return res.status(400).json({error: 'not enough stock'});
+        }
+
+        const [cart] = await db.Cart.findOrCreate({
+            where: { userId: req.userId },
+            defaults: { status: 'active' }
+        });
+
+        const product = await db.Product.findByPk(productId);
+
+        const existingItem = await db.CartItem.findOne({
+            where: { cartId: cart.id, productId }
+        });
+
+        let cartItem;
+
+        if (existingItem) {
+            await existingItem.update({ quantity: existingItem.quantity + quantity });
+            cartItem = existingItem;
+        } else {
+            cartItem = await db.CartItem.create({
+                cartId: cart.id,
+                productId,
+                quantity,
+                priceAtAdd: product.basePrice
+            });
+        }
+
+        res.status(201).json(cartItem);
+
+    } catch (err) {
+        res.status(500).json({error: 'failed to add to cart'});
+    }
+});
+
+
+app.get('/cart', authMiddleware, async (req, res) => {
+    try {
+        const cart = await db.Cart.findOne({
+            where: { userId: req.userId },
+            include: db.CartItem
+        });
+
+        if (!cart) {
+            return res.status(404).json({error: 'cart not found'});
+        }
+
+        res.json(cart);
+
+    } catch (err) {
+        console.log('CART ERROR:', err.message);
+
+        res.status(500).json({error: 'failed to load cart'});
+    }
+});
+
+//update quantity of an item
+app.put('/cart/item/:id', authMiddleware, async (req, res) => {
+    try {
+        const cart = await db.Cart.findOne({ where: { userId: req.userId } });
+        if (!cart) {
+            return res.status(404).json({error: 'cart not found'});
+        }
+
+        const cartItem = await db.CartItem.findOne({
+            where: { id: req.params.id, cartId: cart.id }
+        });
+        if (!cartItem) {
+            return res.status(404).json({error: 'cart item not found'});
+        }
+
+        const { quantity } = req.body;
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            return res.status(400).json({error: 'quantity must be a whole number of 1 or more'});
+        }
+
+        const inStock = await checkStock(cartItem.productId, quantity);
+        if (!inStock) {
+            return res.status(400).json({error: 'not enough stock'});
+        }
+
+        await cartItem.update({ quantity });
+        res.json(cartItem);
+
+    } catch (err) {
+        console.log('PUT CART ITEM ERROR:', err.message);
+        res.status(500).json({error: 'failed to update cart item'});
+    }
+});
+
+
+app.delete('/cart/item/:id', authMiddleware, async (req, res) => {
+    try {
+        const cart = await db.Cart.findOne({ where: { userId: req.userId } });
+        if (!cart) {
+            return res.status(404).json({error: 'cart not found'});
+        }
+
+        const cartItem = await db.CartItem.findOne({
+            where: { id: req.params.id, cartId: cart.id }
+        });
+        if (!cartItem) {
+            return res.status(404).json({error: 'cart item not found'});
+        }
+
+        await cartItem.destroy();
+        res.json({message: 'cart item removed successfully'});
+
+    } catch (err) {
+        res.status(500).json({error: 'failed to remove cart item'});
+    }
+});
 
 
 
