@@ -286,6 +286,30 @@ app.put('/inventory/:id', authMiddleware, async(req,res)=>{
     }
 });
 
+//creates the stock record for one product. This is how a product gets a number of items in stock.
+app.post('/inventory', authMiddleware, async(req,res)=>{
+    try{
+        const{productId, stockQuantity}=req.body;
+        if(!Number.isInteger(stockQuantity)|| stockQuantity<0){
+            return res.status(400).json({error:'stock quantity cannot be negative'});
+        }
+        const product=await db.Product.findByPk(productId);
+        if(!product){
+            return res.status(404).json({error:'product not found'});
+        }
+        const existingInventory=await db.Inventory.findOne({where:{productId}});
+        if(existingInventory){
+            return res.status(409).json({error:'inventory record already exists for this product'});
+        }
+        const inventoryItem= await db.Inventory.create({productId, stockQuantity});
+        res.status(201).json(inventoryItem);
+
+    }
+    catch(err){
+        res.status(500).json({error:'failed to create inventory item'});
+    }
+});
+
 
 //cart
 
